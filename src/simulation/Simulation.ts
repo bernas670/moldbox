@@ -1,17 +1,17 @@
-import { AgentData } from './Agent';
 import { TrailMap } from './TrailMap';
 import type { SimulationParams } from './SimulationParams';
 import { DEFAULT_PARAMS, degToRad } from './SimulationParams';
+import type { SpeciesParams } from './Species';
+import { Species, SPECIES_COLORS, DEFAULT_SPECIES_PARAMS } from './Species';
 import { WebGLRenderer } from '../rendering/WebGLRenderer';
 
 export class Simulation {
   private canvas: HTMLCanvasElement;
   private renderer: WebGLRenderer;
-  private agents: AgentData;
+  private species: Species[] = [];
   private trailMap: TrailMap;
   private params: SimulationParams;
 
-  // Simulation dimensions (square for simplicity)
   private simWidth: number;
   private simHeight: number;
 
@@ -22,12 +22,12 @@ export class Simulation {
   private currentFps: number = 0;
 
   private onFpsUpdate?: (fps: number) => void;
+  private onSpeciesChange?: () => void;
 
   constructor(canvas: HTMLCanvasElement, params: Partial<SimulationParams> = {}) {
     this.canvas = canvas;
     this.params = { ...DEFAULT_PARAMS, ...params };
 
-    // Get WebGL2 context
     const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias: false,
@@ -38,110 +38,95 @@ export class Simulation {
       throw new Error('WebGL2 not supported');
     }
 
-    // Initialize at configured resolution
     this.simWidth = this.params.resolution;
     this.simHeight = this.params.resolution;
 
     this.renderer = new WebGLRenderer(gl, this.simWidth, this.simHeight);
-    this.agents = new AgentData(this.params.agentCount, this.simWidth, this.simHeight);
     this.trailMap = new TrailMap(this.simWidth, this.simHeight);
 
-    // Start with agents in a circle for interesting initial patterns
-    this.agents.initializeCircle(this.simWidth, this.simHeight);
-
-    console.log('Simulation initialized:', {
-      resolution: this.params.resolution,
-      agentCount: this.params.agentCount,
+    // Create default species
+    this.addSpecies({
+      name: 'Species 1',
+      color: SPECIES_COLORS[0],
+      ...DEFAULT_SPECIES_PARAMS,
     });
   }
 
-  /**
-   * Main simulation step
-   */
   private step(): void {
-    const { params, agents, trailMap, simWidth, simHeight } = this;
+    const { params, trailMap, simWidth, simHeight } = this;
 
-    // Convert angles from degrees to radians
-    const sensorAngleRad = degToRad(params.sensorAngle);
-    const turnSpeedRad = degToRad(params.turnSpeed);
+    // Update each species
+    for (const sp of this.species) {
+      const { agents, params: spParams } = sp;
+      const sensorAngleRad = degToRad(spParams.sensorAngle);
+      const turnSpeedRad = degToRad(spParams.turnSpeed);
+      const color = spParams.color;
 
-    // Update each agent
-    for (let i = 0; i < agents.count; i++) {
-      let x = agents.positions[i * 2];
-      let y = agents.positions[i * 2 + 1];
-      let angle = agents.angles[i];
+      for (let i = 0; i < agents.count; i++) {
+        let x = agents.positions[i * 2];
+        let y = agents.positions[i * 2 + 1];
+        let angle = agents.angles[i];
 
-      // Sample sensors
-      const sensorDist = params.sensorDistance;
+        const sensorDist = spParams.sensorDistance;
 
-      // Front-left sensor
-      const leftAngle = angle - sensorAngleRad;
-      const leftX = x + Math.cos(leftAngle) * sensorDist;
-      const leftY = y + Math.sin(leftAngle) * sensorDist;
-      const leftSample = trailMap.sample(leftX, leftY);
+        // Sample sensors
+        const leftAngle = angle - sensorAngleRad;
+        const leftSample = trailMap.sample(
+          x + Math.cos(leftAngle) * sensorDist,
+          y + Math.sin(leftAngle) * sensorDist
+        );
 
-      // Front sensor
-      const frontX = x + Math.cos(angle) * sensorDist;
-      const frontY = y + Math.sin(angle) * sensorDist;
-      const frontSample = trailMap.sample(frontX, frontY);
+        const frontSample = trailMap.sample(
+          x + Math.cos(angle) * sensorDist,
+          y + Math.sin(angle) * sensorDist
+        );
 
-      // Front-right sensor
-      const rightAngle = angle + sensorAngleRad;
-      const rightX = x + Math.cos(rightAngle) * sensorDist;
-      const rightY = y + Math.sin(rightAngle) * sensorDist;
-      const rightSample = trailMap.sample(rightX, rightY);
+        const rightAngle = angle + sensorAngleRad;
+        const rightSample = trailMap.sample(
+          x + Math.cos(rightAngle) * sensorDist,
+          y + Math.sin(rightAngle) * sensorDist
+        );
 
-      // Decide turn direction
-      if (frontSample > leftSample && frontSample > rightSample) {
-        // Go straight (no turn)
-      } else if (frontSample < leftSample && frontSample < rightSample) {
-        // Random turn when front is weakest
-        angle += (Math.random() < 0.5 ? -1 : 1) * turnSpeedRad;
-      } else if (leftSample > rightSample) {
-        // Turn left
-        angle -= turnSpeedRad;
-      } else if (rightSample > leftSample) {
-        // Turn right
-        angle += turnSpeedRad;
-      } else {
-        // Add small random perturbation for tie-breaking
-        angle += (Math.random() - 0.5) * turnSpeedRad * 0.5;
+        // Decide turn direction
+        if (frontSample > leftSample && frontSample > rightSample) {
+          // Go straight
+        } else if (frontSample < leftSample && frontSample < rightSample) {
+          angle += (Math.random() < 0.5 ? -1 : 1) * turnSpeedRad;
+        } else if (leftSample > rightSample) {
+          angle -= turnSpeedRad;
+        } else if (rightSample > leftSample) {
+          angle += turnSpeedRad;
+        } else {
+          angle += (Math.random() - 0.5) * turnSpeedRad * 0.5;
+        }
+
+        // Move forward
+        x += Math.cos(angle) * spParams.moveSpeed;
+        y += Math.sin(angle) * spParams.moveSpeed;
+
+        // Wrap at edges
+        if (x < 0) x += simWidth;
+        if (x >= simWidth) x -= simWidth;
+        if (y < 0) y += simHeight;
+        if (y >= simHeight) y -= simHeight;
+
+        agents.positions[i * 2] = x;
+        agents.positions[i * 2 + 1] = y;
+        agents.angles[i] = angle;
+
+        // Deposit colored pheromone
+        trailMap.deposit(x, y, color, spParams.depositAmount);
       }
-
-      // Move forward
-      x += Math.cos(angle) * params.moveSpeed;
-      y += Math.sin(angle) * params.moveSpeed;
-
-      // Wrap at edges
-      if (x < 0) x += simWidth;
-      if (x >= simWidth) x -= simWidth;
-      if (y < 0) y += simHeight;
-      if (y >= simHeight) y -= simHeight;
-
-      // Update agent state
-      agents.positions[i * 2] = x;
-      agents.positions[i * 2 + 1] = y;
-      agents.angles[i] = angle;
-
-      // Deposit pheromone
-      trailMap.deposit(x, y, params.depositAmount);
     }
 
-    // CPU-based trail processing
     trailMap.diffuse(params.diffusionRate);
     trailMap.decay(params.decayRate);
-
-    // Render to screen
     this.renderer.render(trailMap.data);
   }
 
-  /**
-   * Animation loop
-   */
   private loop = (time: number): void => {
     if (!this.running) return;
 
-    // FPS calculation
     this.frameCount++;
     if (time - this.fpsTime >= 1000) {
       this.currentFps = this.frameCount;
@@ -154,9 +139,6 @@ export class Simulation {
     this.animationId = requestAnimationFrame(this.loop);
   };
 
-  /**
-   * Start simulation
-   */
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -165,9 +147,6 @@ export class Simulation {
     this.animationId = requestAnimationFrame(this.loop);
   }
 
-  /**
-   * Stop simulation
-   */
   stop(): void {
     this.running = false;
     if (this.animationId) {
@@ -176,113 +155,108 @@ export class Simulation {
     }
   }
 
-  /**
-   * Toggle pause/resume
-   */
   toggle(): void {
-    if (this.running) {
-      this.stop();
-    } else {
-      this.start();
-    }
+    if (this.running) this.stop();
+    else this.start();
   }
 
-  /**
-   * Reset simulation
-   */
   reset(): void {
-    this.agents.reset(this.params.agentCount, this.simWidth, this.simHeight);
-    this.agents.initializeCircle(this.simWidth, this.simHeight);
+    for (const sp of this.species) {
+      sp.reset(this.simWidth, this.simHeight);
+    }
     this.trailMap.clear();
   }
 
-  /**
-   * Resize canvas (simulation resolution stays fixed)
-   */
   resize(width: number, height: number): void {
     this.canvas.width = width;
     this.canvas.height = height;
   }
 
-  /**
-   * Update parameters
-   */
-  updateParams(newParams: Partial<SimulationParams>): void {
-    const prevAgentCount = this.params.agentCount;
-    const prevResolution = this.params.resolution;
-    Object.assign(this.params, newParams);
+  // Species management
+  addSpecies(params?: Partial<SpeciesParams>): Species {
+    const index = this.species.length;
+    const fullParams: SpeciesParams = {
+      name: `Species ${index + 1}`,
+      color: SPECIES_COLORS[index % SPECIES_COLORS.length],
+      ...DEFAULT_SPECIES_PARAMS,
+      ...params,
+    };
 
-    // Handle resolution change
-    if (newParams.resolution !== undefined && newParams.resolution !== prevResolution) {
-      this.setResolution(this.params.resolution);
-      return; // setResolution already resets agents
-    }
+    const sp = new Species(fullParams, this.simWidth, this.simHeight);
+    this.species.push(sp);
+    this.onSpeciesChange?.();
+    return sp;
+  }
 
-    // Recreate agents if count changed
-    if (newParams.agentCount !== undefined && newParams.agentCount !== prevAgentCount) {
-      this.agents = new AgentData(
-        this.params.agentCount,
-        this.simWidth,
-        this.simHeight
-      );
-      this.agents.initializeCircle(this.simWidth, this.simHeight);
+  removeSpecies(index: number): void {
+    if (this.species.length > 1 && index >= 0 && index < this.species.length) {
+      this.species.splice(index, 1);
+      this.onSpeciesChange?.();
     }
   }
 
-  /**
-   * Change simulation resolution
-   */
+  getSpecies(): Species[] {
+    return this.species;
+  }
+
+  updateSpeciesParams(index: number, params: Partial<SpeciesParams>): void {
+    const sp = this.species[index];
+    if (!sp) return;
+
+    const prevCount = sp.params.agentCount;
+    Object.assign(sp.params, params);
+
+    if (params.agentCount !== undefined && params.agentCount !== prevCount) {
+      sp.updateAgentCount(params.agentCount, this.simWidth, this.simHeight);
+    }
+  }
+
+  // Global params
+  updateParams(newParams: Partial<SimulationParams>): void {
+    const prevResolution = this.params.resolution;
+    Object.assign(this.params, newParams);
+
+    if (newParams.resolution !== undefined && newParams.resolution !== prevResolution) {
+      this.setResolution(this.params.resolution);
+    }
+  }
+
   private setResolution(resolution: number): void {
     this.simWidth = resolution;
     this.simHeight = resolution;
 
-    // Recreate renderer, trail map, and agents
     this.renderer.resize(resolution, resolution);
     this.trailMap.resize(resolution, resolution);
-    this.agents = new AgentData(this.params.agentCount, resolution, resolution);
-    this.agents.initializeCircle(resolution, resolution);
 
-    console.log('Resolution changed to:', resolution);
+    for (const sp of this.species) {
+      sp.reset(resolution, resolution);
+    }
   }
 
-  /**
-   * Get current parameters
-   */
   getParams(): SimulationParams {
     return { ...this.params };
   }
 
-  /**
-   * Set FPS update callback
-   */
   setFpsCallback(callback: (fps: number) => void): void {
     this.onFpsUpdate = callback;
   }
 
-  /**
-   * Get trail map for external drawing
-   */
+  setSpeciesChangeCallback(callback: () => void): void {
+    this.onSpeciesChange = callback;
+  }
+
   getTrailMap(): TrailMap {
     return this.trailMap;
   }
 
-  /**
-   * Get simulation dimensions
-   */
   getSimDimensions(): { width: number; height: number } {
     return { width: this.simWidth, height: this.simHeight };
   }
 
-  /**
-   * Check if simulation is running
-   */
   isRunning(): boolean {
     return this.running;
   }
 
-  /**
-   * Get current FPS
-   */
   getFps(): number {
     return this.currentFps;
   }

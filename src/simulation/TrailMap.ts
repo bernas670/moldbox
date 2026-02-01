@@ -1,25 +1,26 @@
 /**
- * TrailMap maintains trail data and performs CPU-based processing.
+ * TrailMap maintains RGB trail data and performs CPU-based processing.
+ * Each pixel has 3 channels (R, G, B) for colored trails.
  */
 export class TrailMap {
   width: number;
   height: number;
-  data: Float32Array;
-  private buffer: Float32Array;  // Double buffer for diffusion
+  data: Float32Array;      // RGB interleaved: [r0, g0, b0, r1, g1, b1, ...]
+  private buffer: Float32Array;
 
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
-    this.data = new Float32Array(width * height);
-    this.buffer = new Float32Array(width * height);
+    this.data = new Float32Array(width * height * 3);
+    this.buffer = new Float32Array(width * height * 3);
   }
 
   private index(x: number, y: number): number {
-    return y * this.width + x;
+    return (y * this.width + x) * 3;
   }
 
   /**
-   * Get trail value at position (with bounds checking)
+   * Get trail intensity at position (sum of RGB for sensing)
    */
   sample(x: number, y: number): number {
     const ix = Math.floor(x);
@@ -29,13 +30,28 @@ export class TrailMap {
       return 0;
     }
 
-    return this.data[this.index(ix, iy)];
+    const idx = this.index(ix, iy);
+    return this.data[idx] + this.data[idx + 1] + this.data[idx + 2];
   }
 
   /**
-   * Add deposit at position
+   * Sample specific color channel at position
    */
-  deposit(x: number, y: number, amount: number): void {
+  sampleChannel(x: number, y: number, channel: number): number {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+
+    if (ix < 0 || ix >= this.width || iy < 0 || iy >= this.height) {
+      return 0;
+    }
+
+    return this.data[this.index(ix, iy) + channel];
+  }
+
+  /**
+   * Add colored deposit at position
+   */
+  deposit(x: number, y: number, color: [number, number, number], amount: number): void {
     const ix = Math.floor(x);
     const iy = Math.floor(y);
 
@@ -43,35 +59,42 @@ export class TrailMap {
       return;
     }
 
-    this.data[this.index(ix, iy)] += amount;
+    const idx = this.index(ix, iy);
+    this.data[idx] += color[0] * amount;
+    this.data[idx + 1] += color[1] * amount;
+    this.data[idx + 2] += color[2] * amount;
   }
 
   /**
-   * Apply diffusion (blur) to trail
+   * Apply diffusion (blur) to trail - all channels
    */
   diffuse(rate: number): void {
     const { width, height, data, buffer } = this;
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        let sum = 0;
-        let count = 0;
+        const centerIdx = this.index(x, y);
 
-        // Sample 3x3 neighborhood
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const nx = x + dx;
-            const ny = y + dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-              sum += data[this.index(nx, ny)];
-              count++;
+        for (let c = 0; c < 3; c++) {
+          let sum = 0;
+          let count = 0;
+
+          // Sample 3x3 neighborhood
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                sum += data[this.index(nx, ny) + c];
+                count++;
+              }
             }
           }
-        }
 
-        const center = data[this.index(x, y)];
-        const avg = sum / count;
-        buffer[this.index(x, y)] = center + (avg - center) * rate;
+          const center = data[centerIdx + c];
+          const avg = sum / count;
+          buffer[centerIdx + c] = center + (avg - center) * rate;
+        }
       }
     }
 
@@ -80,7 +103,7 @@ export class TrailMap {
   }
 
   /**
-   * Apply decay to trail
+   * Apply decay to trail - all channels
    */
   decay(rate: number): void {
     const { data } = this;
@@ -95,8 +118,8 @@ export class TrailMap {
   resize(width: number, height: number): void {
     this.width = width;
     this.height = height;
-    this.data = new Float32Array(width * height);
-    this.buffer = new Float32Array(width * height);
+    this.data = new Float32Array(width * height * 3);
+    this.buffer = new Float32Array(width * height * 3);
   }
 
   /**
@@ -107,9 +130,9 @@ export class TrailMap {
   }
 
   /**
-   * Draw a circle of trail at position
+   * Draw a circle of colored trail at position
    */
-  drawCircle(x: number, y: number, radius: number, amount: number): void {
+  drawCircle(x: number, y: number, radius: number, color: [number, number, number], amount: number): void {
     const r2 = radius * radius;
     const minX = Math.max(0, Math.floor(x - radius));
     const maxX = Math.min(this.width - 1, Math.ceil(x + radius));
@@ -121,7 +144,10 @@ export class TrailMap {
         const dx = px - x;
         const dy = py - y;
         if (dx * dx + dy * dy <= r2) {
-          this.data[this.index(px, py)] += amount;
+          const idx = this.index(px, py);
+          this.data[idx] += color[0] * amount;
+          this.data[idx + 1] += color[1] * amount;
+          this.data[idx + 2] += color[2] * amount;
         }
       }
     }
@@ -142,7 +168,10 @@ export class TrailMap {
         const dx = px - x;
         const dy = py - y;
         if (dx * dx + dy * dy <= r2) {
-          this.data[this.index(px, py)] = 0;
+          const idx = this.index(px, py);
+          this.data[idx] = 0;
+          this.data[idx + 1] = 0;
+          this.data[idx + 2] = 0;
         }
       }
     }

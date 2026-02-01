@@ -24,7 +24,6 @@ export class InteractionHandler {
     const rect = this.canvas.getBoundingClientRect();
     const simDims = this.simulation.getSimDimensions();
 
-    // Convert from client coordinates to simulation coordinates
     const x = ((clientX - rect.left) / rect.width) * simDims.width;
     const y = ((clientY - rect.top) / rect.height) * simDims.height;
 
@@ -36,27 +35,23 @@ export class InteractionHandler {
     const trailMap = this.simulation.getTrailMap();
     const simDims = this.simulation.getSimDimensions();
 
-    // Scale brush radius to simulation space
     const rect = this.canvas.getBoundingClientRect();
     const scale = simDims.width / rect.width;
     const radius = state.brushRadius * scale;
 
     switch (state.drawMode) {
       case 'draw':
-        trailMap.drawCircle(x, y, radius, 50);
+        trailMap.drawCircle(x, y, radius, state.drawColor, 50);
         break;
       case 'erase':
         trailMap.eraseCircle(x, y, radius);
-        break;
-      case 'spawn':
-        // Spawn agents at position - not implemented yet
         break;
     }
   }
 
   private setupMouseEvents(): void {
     this.canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return; // Left click only
+      if (e.button !== 0) return;
       this.isDrawing = true;
       const [x, y] = this.getSimPosition(e.clientX, e.clientY);
       this.lastX = x;
@@ -68,7 +63,6 @@ export class InteractionHandler {
       if (!this.isDrawing) return;
       const [x, y] = this.getSimPosition(e.clientX, e.clientY);
 
-      // Interpolate between last position and current for smooth lines
       const dx = x - this.lastX;
       const dy = y - this.lastY;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -76,9 +70,7 @@ export class InteractionHandler {
 
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
-        const ix = this.lastX + dx * t;
-        const iy = this.lastY + dy * t;
-        this.handleDraw(ix, iy);
+        this.handleDraw(this.lastX + dx * t, this.lastY + dy * t);
       }
 
       this.lastX = x;
@@ -114,7 +106,6 @@ export class InteractionHandler {
       const touch = e.touches[0];
       const [x, y] = this.getSimPosition(touch.clientX, touch.clientY);
 
-      // Interpolate for smooth lines
       const dx = x - this.lastX;
       const dy = y - this.lastY;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -122,9 +113,7 @@ export class InteractionHandler {
 
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
-        const ix = this.lastX + dx * t;
-        const iy = this.lastY + dy * t;
-        this.handleDraw(ix, iy);
+        this.handleDraw(this.lastX + dx * t, this.lastY + dy * t);
       }
 
       this.lastX = x;
@@ -142,7 +131,6 @@ export class InteractionHandler {
 
   private setupKeyboardEvents(): void {
     document.addEventListener('keydown', (e) => {
-      // Ignore if typing in an input
       if (e.target instanceof HTMLInputElement) return;
 
       switch (e.code) {
@@ -153,18 +141,6 @@ export class InteractionHandler {
         case 'KeyR':
           e.preventDefault();
           this.simulation.reset();
-          break;
-        case 'Digit1':
-          e.preventDefault();
-          this.controls.getControlState().drawMode = 'draw';
-          break;
-        case 'Digit2':
-          e.preventDefault();
-          this.controls.getControlState().drawMode = 'erase';
-          break;
-        case 'Digit3':
-          e.preventDefault();
-          this.controls.getControlState().drawMode = 'spawn';
           break;
       }
     });

@@ -24,8 +24,6 @@ function init() {
   instructions.innerHTML = `
     <kbd>Space</kbd> Pause/Resume &nbsp;
     <kbd>R</kbd> Reset &nbsp;
-    <kbd>1</kbd> Draw &nbsp;
-    <kbd>2</kbd> Erase &nbsp;
     <kbd>Click & Drag</kbd> Paint trails
   `;
   document.body.appendChild(instructions);
