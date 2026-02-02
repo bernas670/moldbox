@@ -22,6 +22,8 @@ export class Controls {
   private speciesContainer!: GUI;
   private trailFolders: GUI[] = [];
   private trailsContainer!: GUI;
+  private interactionFolder!: GUI;
+  private trailDrawController: ReturnType<GUI['add']> | null = null;
 
   constructor(simulation: Simulation) {
     this.simulation = simulation;
@@ -47,6 +49,7 @@ export class Controls {
     simulation.setTrailChangeCallback(() => {
       this.rebuildTrailsUI();
       this.rebuildSpeciesUI(); // Species dropdowns depend on trails
+      this.rebuildTrailDrawDropdown(); // Draw dropdown depends on trails
     });
   }
 
@@ -86,16 +89,16 @@ export class Controls {
     this.speciesContainer.add(speciesActions, 'addSpecies').name('+ Add Species');
 
     // Interaction folder
-    const interactionFolder = this.gui.addFolder('Interaction');
-    interactionFolder
+    this.interactionFolder = this.gui.addFolder('Interaction');
+    this.interactionFolder
       .add(this.controlState, 'drawMode', ['draw', 'erase'])
       .name('Draw Mode');
-    interactionFolder
+    this.interactionFolder
       .add(this.controlState, 'brushRadius', 5, 100, 1)
       .name('Brush Radius');
 
     // Trail selector for drawing
-    this.updateTrailDrawDropdown(interactionFolder);
+    this.rebuildTrailDrawDropdown();
 
     // Actions folder
     const actionsFolder = this.gui.addFolder('Actions');
@@ -112,14 +115,24 @@ export class Controls {
     this.speciesContainer.open();
   }
 
-  private updateTrailDrawDropdown(folder: GUI): void {
+  private rebuildTrailDrawDropdown(): void {
+    // Remove old controller if exists
+    if (this.trailDrawController) {
+      this.trailDrawController.destroy();
+    }
+
     const trailNames = this.simulation.getTrailNames();
     const options: Record<string, number> = {};
     trailNames.forEach((name, index) => {
       options[name] = index;
     });
 
-    folder
+    // Clamp selected index to valid range
+    if (this.controlState.selectedTrailIndex >= trailNames.length) {
+      this.controlState.selectedTrailIndex = 0;
+    }
+
+    this.trailDrawController = this.interactionFolder
       .add(this.controlState, 'selectedTrailIndex', options)
       .name('Draw on Trail');
   }
