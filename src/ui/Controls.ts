@@ -3,6 +3,7 @@ import { Simulation } from '../simulation/Simulation';
 import type { SimulationParams } from '../simulation/SimulationParams';
 import type { Species } from '../simulation/Species';
 import type { Trail } from '../simulation/Trail';
+import { ConfigManager } from '../config/ConfigManager';
 
 export type DrawMode = 'draw' | 'erase';
 
@@ -24,6 +25,12 @@ export class Controls {
   private trailsContainer!: GUI;
   private interactionFolder!: GUI;
   private trailDrawController: ReturnType<GUI['add']> | null = null;
+  private presetsFolder!: GUI;
+  private presetState: {
+    configName: string;
+    selectedConfigId: string;
+  };
+  private configSelectController: ReturnType<GUI['add']> | null = null;
 
   constructor(simulation: Simulation) {
     this.simulation = simulation;
@@ -34,6 +41,10 @@ export class Controls {
       selectedTrailIndex: 0,
     };
     this.fpsDisplay = { fps: '0 FPS' };
+    this.presetState = {
+      configName: '',
+      selectedConfigId: '',
+    };
 
     this.gui = new GUI({ title: 'Slime Mold Simulation' });
     this.setupControls();
@@ -118,10 +129,104 @@ export class Controls {
     actionsFolder.add(actions, 'pause').name('Pause / Resume (Space)');
     actionsFolder.add(actions, 'reset').name('Reset (R)');
 
+    // Presets folder
+    this.presetsFolder = this.gui.addFolder('Presets');
+    this.setupPresetsUI();
+
     // Open important folders
     perfFolder.open();
     this.trailsContainer.open();
     this.speciesContainer.open();
+  }
+
+  private setupPresetsUI(): void {
+    // Config name input
+    this.presetsFolder.add(this.presetState, 'configName').name('Config Name');
+
+    // Save button
+    const saveAction = {
+      save: () => {
+        const name = this.presetState.configName.trim();
+        if (!name) {
+          alert('Please enter a name for the configuration');
+          return;
+        }
+        const config = this.simulation.exportConfig(name);
+        ConfigManager.save(config);
+        this.presetState.configName = '';
+        this.rebuildConfigDropdown();
+      },
+    };
+    this.presetsFolder.add(saveAction, 'save').name('Save Current');
+
+    // Separator - saved configs section
+    this.rebuildConfigDropdown();
+
+    // Load button
+    const loadAction = {
+      load: () => {
+        const id = this.presetState.selectedConfigId;
+        if (!id) {
+          alert('Please select a configuration to load');
+          return;
+        }
+        const entry = ConfigManager.get(id);
+        if (entry) {
+          this.simulation.loadConfig(entry.config);
+          this.params = this.simulation.getParams();
+          this.rebuildAllUI();
+        }
+      },
+    };
+    this.presetsFolder.add(loadAction, 'load').name('Load Selected');
+
+    // Delete button
+    const deleteAction = {
+      delete: () => {
+        const id = this.presetState.selectedConfigId;
+        if (!id) {
+          alert('Please select a configuration to delete');
+          return;
+        }
+        if (confirm('Delete this configuration?')) {
+          ConfigManager.delete(id);
+          this.presetState.selectedConfigId = '';
+          this.rebuildConfigDropdown();
+        }
+      },
+    };
+    this.presetsFolder.add(deleteAction, 'delete').name('Delete Selected');
+  }
+
+  private rebuildConfigDropdown(): void {
+    // Remove old controller if exists
+    if (this.configSelectController) {
+      this.configSelectController.destroy();
+    }
+
+    const configs = ConfigManager.getAll();
+    const options: Record<string, string> = { '-- Select --': '' };
+
+    for (const entry of configs) {
+      const date = new Date(entry.createdAt).toLocaleDateString();
+      options[`${entry.name} (${date})`] = entry.id;
+    }
+
+    // Reset selection if current selection no longer exists
+    if (this.presetState.selectedConfigId && !configs.find(c => c.id === this.presetState.selectedConfigId)) {
+      this.presetState.selectedConfigId = '';
+    }
+
+    // Insert after the save button (index 1)
+    this.configSelectController = this.presetsFolder
+      .add(this.presetState, 'selectedConfigId', options)
+      .name('Saved Configs');
+  }
+
+  private rebuildAllUI(): void {
+    this.rebuildTrailsUI();
+    this.rebuildSpeciesUI();
+    this.rebuildTrailDrawDropdown();
   }
 
   private rebuildTrailDrawDropdown(): void {

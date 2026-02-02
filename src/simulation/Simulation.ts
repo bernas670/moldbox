@@ -6,6 +6,14 @@ import type { TrailParams } from './Trail';
 import { Trail, TRAIL_COLORS, DEFAULT_TRAIL_PARAMS } from './Trail';
 import { WebGLRenderer } from '../rendering/WebGLRenderer';
 
+export interface SimulationConfig {
+  name: string;
+  createdAt: string;
+  params: SimulationParams;
+  trails: TrailParams[];
+  species: SpeciesParams[];
+}
+
 export class Simulation {
   private canvas: HTMLCanvasElement;
   private renderer: WebGLRenderer;
@@ -391,5 +399,42 @@ export class Simulation {
 
   getFps(): number {
     return this.currentFps;
+  }
+
+  // Config export/import
+  exportConfig(name: string): SimulationConfig {
+    return {
+      name,
+      createdAt: new Date().toISOString(),
+      params: { ...this.params },
+      trails: this.trails.map(t => ({ ...t.params })),
+      species: this.species.map(s => ({ ...s.params })),
+    };
+  }
+
+  loadConfig(config: SimulationConfig): void {
+    // Update simulation params
+    Object.assign(this.params, config.params);
+    this.applyResolution();
+
+    // Clear existing trails and species
+    this.trails = [];
+    this.species = [];
+
+    // Recreate trails
+    for (const trailParams of config.trails) {
+      const trail = new Trail({ ...trailParams }, this.simWidth, this.simHeight);
+      this.trails.push(trail);
+    }
+
+    // Recreate species
+    for (const speciesParams of config.species) {
+      const sp = new Species({ ...speciesParams }, this.simWidth, this.simHeight);
+      this.species.push(sp);
+    }
+
+    // Notify UI to rebuild
+    this.onTrailChange?.();
+    this.onSpeciesChange?.();
   }
 }
