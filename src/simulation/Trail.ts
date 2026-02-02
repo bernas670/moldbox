@@ -29,12 +29,21 @@ export class Trail {
     return y * this.width + x;
   }
 
-  sample(x: number, y: number): number {
-    const ix = Math.floor(x);
-    const iy = Math.floor(y);
-    if (ix < 0 || ix >= this.width || iy < 0 || iy >= this.height) {
-      return 0;
+  sample(x: number, y: number, wrap: boolean = false): number {
+    let ix = Math.floor(x);
+    let iy = Math.floor(y);
+
+    if (wrap) {
+      // Wrap coordinates for toroidal sampling
+      ix = ((ix % this.width) + this.width) % this.width;
+      iy = ((iy % this.height) + this.height) % this.height;
+    } else {
+      // Return 0 for out-of-bounds (bounded mode)
+      if (ix < 0 || ix >= this.width || iy < 0 || iy >= this.height) {
+        return 0;
+      }
     }
+
     return this.data[this.index(ix, iy)];
   }
 

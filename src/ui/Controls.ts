@@ -56,12 +56,21 @@ export class Controls {
   private setupControls(): void {
     // Performance folder
     const perfFolder = this.gui.addFolder('Performance');
-    perfFolder.add(this.fpsDisplay, 'fps').name('Frame Rate').disable();
+    perfFolder.add(this.fpsDisplay, 'fps').name('Frame Rate').disable().listen();
     perfFolder
       .add(this.params, 'resolutionScale', 25, 100, 5)
       .name('Resolution Scale %')
       .onChange((value: number) => {
         this.simulation.updateParams({ resolutionScale: value });
+      });
+
+    // Simulation settings folder
+    const simFolder = this.gui.addFolder('Simulation');
+    simFolder
+      .add(this.params, 'wrapEdges')
+      .name('Wrap Edges')
+      .onChange((value: boolean) => {
+        this.simulation.updateParams({ wrapEdges: value });
       });
 
     // Trails container

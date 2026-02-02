@@ -90,7 +90,8 @@ export class Simulation {
   }
 
   private step(): void {
-    const { simWidth, simHeight } = this;
+    const { simWidth, simHeight, params } = this;
+    const wrap = params.wrapEdges;
 
     // Update each species
     for (const sp of this.species) {
@@ -111,22 +112,25 @@ export class Simulation {
 
         const sensorDist = spParams.sensorDistance;
 
-        // Sample sensors from the follow trail
+        // Sample sensors from the follow trail (with wrap mode)
         const leftAngle = angle - sensorAngleRad;
         const leftSample = followTrail.sample(
           x + Math.cos(leftAngle) * sensorDist,
-          y + Math.sin(leftAngle) * sensorDist
+          y + Math.sin(leftAngle) * sensorDist,
+          wrap
         );
 
         const frontSample = followTrail.sample(
           x + Math.cos(angle) * sensorDist,
-          y + Math.sin(angle) * sensorDist
+          y + Math.sin(angle) * sensorDist,
+          wrap
         );
 
         const rightAngle = angle + sensorAngleRad;
         const rightSample = followTrail.sample(
           x + Math.cos(rightAngle) * sensorDist,
-          y + Math.sin(rightAngle) * sensorDist
+          y + Math.sin(rightAngle) * sensorDist,
+          wrap
         );
 
         // Decide turn direction
@@ -143,14 +147,30 @@ export class Simulation {
         }
 
         // Move forward
-        x += Math.cos(angle) * spParams.moveSpeed;
-        y += Math.sin(angle) * spParams.moveSpeed;
+        let newX = x + Math.cos(angle) * spParams.moveSpeed;
+        let newY = y + Math.sin(angle) * spParams.moveSpeed;
 
-        // Wrap at edges
-        if (x < 0) x += simWidth;
-        if (x >= simWidth) x -= simWidth;
-        if (y < 0) y += simHeight;
-        if (y >= simHeight) y -= simHeight;
+        if (wrap) {
+          // Wrap at edges (toroidal)
+          if (newX < 0) newX += simWidth;
+          if (newX >= simWidth) newX -= simWidth;
+          if (newY < 0) newY += simHeight;
+          if (newY >= simHeight) newY -= simHeight;
+          x = newX;
+          y = newY;
+        } else {
+          // Bounded mode: bounce off edges
+          if (newX < 0 || newX >= simWidth) {
+            angle = Math.PI - angle; // Reflect horizontally
+            newX = Math.max(0, Math.min(simWidth - 0.01, newX));
+          }
+          if (newY < 0 || newY >= simHeight) {
+            angle = -angle; // Reflect vertically
+            newY = Math.max(0, Math.min(simHeight - 0.01, newY));
+          }
+          x = newX;
+          y = newY;
+        }
 
         agents.positions[i * 2] = x;
         agents.positions[i * 2 + 1] = y;
