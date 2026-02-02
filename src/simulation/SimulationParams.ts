@@ -3,14 +3,14 @@ export interface SimulationParams {
   diffusionRate: number;
   decayRate: number;
 
-  // Simulation scale
-  resolution: number;
+  // Simulation scale (percentage of canvas size, 50-100)
+  resolutionScale: number;
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
   diffusionRate: 0.1,
   decayRate: 0.98,
-  resolution: 400,
+  resolutionScale: 50,
 };
 
 // Convert degrees to radians

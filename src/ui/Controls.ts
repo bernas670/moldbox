@@ -48,10 +48,10 @@ export class Controls {
     const perfFolder = this.gui.addFolder('Performance');
     perfFolder.add(this.fpsDisplay, 'fps').name('Frame Rate').disable();
     perfFolder
-      .add(this.params, 'resolution', 200, 800, 50)
-      .name('Resolution')
+      .add(this.params, 'resolutionScale', 25, 100, 5)
+      .name('Resolution Scale %')
       .onChange((value: number) => {
-        this.simulation.updateParams({ resolution: value });
+        this.simulation.updateParams({ resolutionScale: value });
       });
 
     // Trail folder (global settings)

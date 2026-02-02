@@ -38,8 +38,10 @@ export class Simulation {
       throw new Error('WebGL2 not supported');
     }
 
-    this.simWidth = this.params.resolution;
-    this.simHeight = this.params.resolution;
+    // Calculate resolution from canvas size and scale
+    const { width, height } = this.calculateResolution();
+    this.simWidth = width;
+    this.simHeight = height;
 
     this.renderer = new WebGLRenderer(gl, this.simWidth, this.simHeight);
     this.trailMap = new TrailMap(this.simWidth, this.simHeight);
@@ -50,6 +52,14 @@ export class Simulation {
       color: SPECIES_COLORS[0],
       ...DEFAULT_SPECIES_PARAMS,
     });
+  }
+
+  private calculateResolution(): { width: number; height: number } {
+    const scale = this.params.resolutionScale / 100;
+    return {
+      width: Math.floor(this.canvas.width * scale),
+      height: Math.floor(this.canvas.height * scale),
+    };
   }
 
   private step(): void {
@@ -170,6 +180,26 @@ export class Simulation {
   resize(width: number, height: number): void {
     this.canvas.width = width;
     this.canvas.height = height;
+    // Recalculate resolution based on new canvas size
+    this.applyResolution();
+  }
+
+  private applyResolution(): void {
+    const { width, height } = this.calculateResolution();
+
+    if (width === this.simWidth && height === this.simHeight) {
+      return;
+    }
+
+    this.simWidth = width;
+    this.simHeight = height;
+
+    this.renderer.resize(width, height);
+    this.trailMap.resize(width, height);
+
+    for (const sp of this.species) {
+      sp.reset(width, height);
+    }
   }
 
   // Species management
@@ -213,23 +243,10 @@ export class Simulation {
 
   // Global params
   updateParams(newParams: Partial<SimulationParams>): void {
-    const prevResolution = this.params.resolution;
     Object.assign(this.params, newParams);
 
-    if (newParams.resolution !== undefined && newParams.resolution !== prevResolution) {
-      this.setResolution(this.params.resolution);
-    }
-  }
-
-  private setResolution(resolution: number): void {
-    this.simWidth = resolution;
-    this.simHeight = resolution;
-
-    this.renderer.resize(resolution, resolution);
-    this.trailMap.resize(resolution, resolution);
-
-    for (const sp of this.species) {
-      sp.reset(resolution, resolution);
+    if (newParams.resolutionScale !== undefined) {
+      this.applyResolution();
     }
   }
 
