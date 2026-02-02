@@ -2,22 +2,25 @@ import { AgentData } from './Agent';
 
 export interface SpeciesParams {
   name: string;
-  color: [number, number, number]; // RGB 0-1
   agentCount: number;
   sensorAngle: number;
   sensorDistance: number;
   turnSpeed: number;
   moveSpeed: number;
   depositAmount: number;
+  followTrailIndex: number;  // Which trail to sense/follow
+  depositTrailIndex: number; // Which trail to deposit pheromones on
 }
 
-export const DEFAULT_SPECIES_PARAMS: Omit<SpeciesParams, 'name' | 'color'> = {
+export const DEFAULT_SPECIES_PARAMS: Omit<SpeciesParams, 'name'> = {
   agentCount: 5000,
   sensorAngle: 45,
   sensorDistance: 9,
   turnSpeed: 45,
   moveSpeed: 1,
   depositAmount: 5,
+  followTrailIndex: 0,
+  depositTrailIndex: 0,
 };
 
 export class Species {
@@ -42,22 +45,4 @@ export class Species {
     this.agents.reset(this.params.agentCount, width, height);
     this.agents.initializeCircle(width, height);
   }
-}
-
-// Predefined color palette for new species
-export const SPECIES_COLORS: [number, number, number][] = [
-  [0.0, 0.8, 0.9],   // Cyan
-  [0.9, 0.3, 0.1],   // Orange
-  [0.2, 0.9, 0.3],   // Green
-  [0.9, 0.2, 0.6],   // Pink
-  [0.6, 0.4, 0.9],   // Purple
-  [0.9, 0.9, 0.2],   // Yellow
-];
-
-export function createDefaultSpecies(): SpeciesParams {
-  return {
-    name: 'Species 1',
-    color: [0.0, 0.8, 0.9],
-    ...DEFAULT_SPECIES_PARAMS,
-  };
 }

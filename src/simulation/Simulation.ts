@@ -1,15 +1,17 @@
-import { TrailMap } from './TrailMap';
 import type { SimulationParams } from './SimulationParams';
 import { DEFAULT_PARAMS, degToRad } from './SimulationParams';
 import type { SpeciesParams } from './Species';
-import { Species, SPECIES_COLORS, DEFAULT_SPECIES_PARAMS } from './Species';
+import { Species, DEFAULT_SPECIES_PARAMS } from './Species';
+import type { TrailParams } from './Trail';
+import { Trail, TRAIL_COLORS, DEFAULT_TRAIL_PARAMS } from './Trail';
 import { WebGLRenderer } from '../rendering/WebGLRenderer';
 
 export class Simulation {
   private canvas: HTMLCanvasElement;
   private renderer: WebGLRenderer;
   private species: Species[] = [];
-  private trailMap: TrailMap;
+  private trails: Trail[] = [];
+  private compositeData: Float32Array;
   private params: SimulationParams;
 
   private simWidth: number;
@@ -23,6 +25,7 @@ export class Simulation {
 
   private onFpsUpdate?: (fps: number) => void;
   private onSpeciesChange?: () => void;
+  private onTrailChange?: () => void;
 
   constructor(canvas: HTMLCanvasElement, params: Partial<SimulationParams> = {}) {
     this.canvas = canvas;
@@ -38,18 +41,23 @@ export class Simulation {
       throw new Error('WebGL2 not supported');
     }
 
-    // Calculate resolution from canvas size and scale
     const { width, height } = this.calculateResolution();
     this.simWidth = width;
     this.simHeight = height;
+    this.compositeData = new Float32Array(width * height * 3);
 
     this.renderer = new WebGLRenderer(gl, this.simWidth, this.simHeight);
-    this.trailMap = new TrailMap(this.simWidth, this.simHeight);
+
+    // Create default trail
+    this.addTrail({
+      name: 'Trail 1',
+      color: TRAIL_COLORS[0],
+      ...DEFAULT_TRAIL_PARAMS,
+    });
 
     // Create default species
     this.addSpecies({
       name: 'Species 1',
-      color: SPECIES_COLORS[0],
       ...DEFAULT_SPECIES_PARAMS,
     });
   }
@@ -62,15 +70,39 @@ export class Simulation {
     };
   }
 
+  private compositeTrails(): void {
+    // Clear composite
+    this.compositeData.fill(0);
+
+    // Add each trail's contribution
+    for (const trail of this.trails) {
+      const color = trail.params.color;
+      const data = trail.data;
+
+      for (let i = 0; i < data.length; i++) {
+        const value = data[i];
+        const idx = i * 3;
+        this.compositeData[idx] += color[0] * value;
+        this.compositeData[idx + 1] += color[1] * value;
+        this.compositeData[idx + 2] += color[2] * value;
+      }
+    }
+  }
+
   private step(): void {
-    const { params, trailMap, simWidth, simHeight } = this;
+    const { simWidth, simHeight } = this;
 
     // Update each species
     for (const sp of this.species) {
       const { agents, params: spParams } = sp;
       const sensorAngleRad = degToRad(spParams.sensorAngle);
       const turnSpeedRad = degToRad(spParams.turnSpeed);
-      const color = spParams.color;
+
+      // Get the trails this species interacts with
+      const followTrail = this.trails[spParams.followTrailIndex];
+      const depositTrail = this.trails[spParams.depositTrailIndex];
+
+      if (!followTrail || !depositTrail) continue;
 
       for (let i = 0; i < agents.count; i++) {
         let x = agents.positions[i * 2];
@@ -79,20 +111,20 @@ export class Simulation {
 
         const sensorDist = spParams.sensorDistance;
 
-        // Sample sensors
+        // Sample sensors from the follow trail
         const leftAngle = angle - sensorAngleRad;
-        const leftSample = trailMap.sample(
+        const leftSample = followTrail.sample(
           x + Math.cos(leftAngle) * sensorDist,
           y + Math.sin(leftAngle) * sensorDist
         );
 
-        const frontSample = trailMap.sample(
+        const frontSample = followTrail.sample(
           x + Math.cos(angle) * sensorDist,
           y + Math.sin(angle) * sensorDist
         );
 
         const rightAngle = angle + sensorAngleRad;
-        const rightSample = trailMap.sample(
+        const rightSample = followTrail.sample(
           x + Math.cos(rightAngle) * sensorDist,
           y + Math.sin(rightAngle) * sensorDist
         );
@@ -124,14 +156,20 @@ export class Simulation {
         agents.positions[i * 2 + 1] = y;
         agents.angles[i] = angle;
 
-        // Deposit colored pheromone
-        trailMap.deposit(x, y, color, spParams.depositAmount);
+        // Deposit pheromone on the deposit trail
+        depositTrail.deposit(x, y, spParams.depositAmount);
       }
     }
 
-    trailMap.diffuse(params.diffusionRate);
-    trailMap.decay(params.decayRate);
-    this.renderer.render(trailMap.data);
+    // Process each trail
+    for (const trail of this.trails) {
+      trail.diffuse();
+      trail.decay();
+    }
+
+    // Composite all trails and render
+    this.compositeTrails();
+    this.renderer.render(this.compositeData);
   }
 
   private loop = (time: number): void => {
@@ -174,13 +212,14 @@ export class Simulation {
     for (const sp of this.species) {
       sp.reset(this.simWidth, this.simHeight);
     }
-    this.trailMap.clear();
+    for (const trail of this.trails) {
+      trail.clear();
+    }
   }
 
   resize(width: number, height: number): void {
     this.canvas.width = width;
     this.canvas.height = height;
-    // Recalculate resolution based on new canvas size
     this.applyResolution();
   }
 
@@ -193,12 +232,65 @@ export class Simulation {
 
     this.simWidth = width;
     this.simHeight = height;
+    this.compositeData = new Float32Array(width * height * 3);
 
     this.renderer.resize(width, height);
-    this.trailMap.resize(width, height);
+
+    for (const trail of this.trails) {
+      trail.resize(width, height);
+    }
 
     for (const sp of this.species) {
       sp.reset(width, height);
+    }
+  }
+
+  // Trail management
+  addTrail(params?: Partial<TrailParams>): Trail {
+    const index = this.trails.length;
+    const fullParams: TrailParams = {
+      name: `Trail ${index + 1}`,
+      color: TRAIL_COLORS[index % TRAIL_COLORS.length],
+      ...DEFAULT_TRAIL_PARAMS,
+      ...params,
+    };
+
+    const trail = new Trail(fullParams, this.simWidth, this.simHeight);
+    this.trails.push(trail);
+    this.onTrailChange?.();
+    return trail;
+  }
+
+  removeTrail(index: number): void {
+    if (this.trails.length > 1 && index >= 0 && index < this.trails.length) {
+      this.trails.splice(index, 1);
+
+      // Update species that referenced removed or higher indexed trails
+      for (const sp of this.species) {
+        if (sp.params.followTrailIndex >= this.trails.length) {
+          sp.params.followTrailIndex = 0;
+        }
+        if (sp.params.depositTrailIndex >= this.trails.length) {
+          sp.params.depositTrailIndex = 0;
+        }
+      }
+
+      this.onTrailChange?.();
+    }
+  }
+
+  getTrails(): Trail[] {
+    return this.trails;
+  }
+
+  getTrailNames(): string[] {
+    return this.trails.map(t => t.params.name);
+  }
+
+  updateTrailParams(index: number, params: Partial<TrailParams>): void {
+    const trail = this.trails[index];
+    if (trail) {
+      Object.assign(trail.params, params);
     }
   }
 
@@ -207,7 +299,6 @@ export class Simulation {
     const index = this.species.length;
     const fullParams: SpeciesParams = {
       name: `Species ${index + 1}`,
-      color: SPECIES_COLORS[index % SPECIES_COLORS.length],
       ...DEFAULT_SPECIES_PARAMS,
       ...params,
     };
@@ -262,8 +353,12 @@ export class Simulation {
     this.onSpeciesChange = callback;
   }
 
-  getTrailMap(): TrailMap {
-    return this.trailMap;
+  setTrailChangeCallback(callback: () => void): void {
+    this.onTrailChange = callback;
+  }
+
+  getTrail(index: number): Trail | undefined {
+    return this.trails[index];
   }
 
   getSimDimensions(): { width: number; height: number } {

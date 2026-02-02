@@ -1,15 +1,9 @@
 export interface SimulationParams {
-  // Trail behavior (global)
-  diffusionRate: number;
-  decayRate: number;
-
-  // Simulation scale (percentage of canvas size, 50-100)
+  // Simulation scale (percentage of canvas size, 25-100)
   resolutionScale: number;
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
-  diffusionRate: 0.1,
-  decayRate: 0.98,
   resolutionScale: 50,
 };
 

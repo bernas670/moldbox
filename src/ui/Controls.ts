@@ -2,14 +2,14 @@ import GUI from 'lil-gui';
 import { Simulation } from '../simulation/Simulation';
 import type { SimulationParams } from '../simulation/SimulationParams';
 import type { Species } from '../simulation/Species';
-import { SPECIES_COLORS } from '../simulation/Species';
+import type { Trail } from '../simulation/Trail';
 
 export type DrawMode = 'draw' | 'erase';
 
 export interface ControlState {
   drawMode: DrawMode;
   brushRadius: number;
-  drawColor: [number, number, number];
+  selectedTrailIndex: number;
 }
 
 export class Controls {
@@ -20,6 +20,8 @@ export class Controls {
   private fpsDisplay: { fps: string };
   private speciesFolders: GUI[] = [];
   private speciesContainer!: GUI;
+  private trailFolders: GUI[] = [];
+  private trailsContainer!: GUI;
 
   constructor(simulation: Simulation) {
     this.simulation = simulation;
@@ -27,7 +29,7 @@ export class Controls {
     this.controlState = {
       drawMode: 'draw',
       brushRadius: 20,
-      drawColor: SPECIES_COLORS[0],
+      selectedTrailIndex: 0,
     };
     this.fpsDisplay = { fps: '0 FPS' };
 
@@ -40,6 +42,11 @@ export class Controls {
 
     simulation.setSpeciesChangeCallback(() => {
       this.rebuildSpeciesUI();
+    });
+
+    simulation.setTrailChangeCallback(() => {
+      this.rebuildTrailsUI();
+      this.rebuildSpeciesUI(); // Species dropdowns depend on trails
     });
   }
 
@@ -54,20 +61,17 @@ export class Controls {
         this.simulation.updateParams({ resolutionScale: value });
       });
 
-    // Trail folder (global settings)
-    const trailFolder = this.gui.addFolder('Trail (Global)');
-    trailFolder
-      .add(this.params, 'diffusionRate', 0, 0.5, 0.01)
-      .name('Diffusion Rate')
-      .onChange((value: number) => {
-        this.simulation.updateParams({ diffusionRate: value });
-      });
-    trailFolder
-      .add(this.params, 'decayRate', 0.9, 1, 0.001)
-      .name('Decay Rate')
-      .onChange((value: number) => {
-        this.simulation.updateParams({ decayRate: value });
-      });
+    // Trails container
+    this.trailsContainer = this.gui.addFolder('Trails');
+    this.rebuildTrailsUI();
+
+    // Add trail button
+    const trailActions = {
+      addTrail: () => {
+        this.simulation.addTrail();
+      },
+    };
+    this.trailsContainer.add(trailActions, 'addTrail').name('+ Add Trail');
 
     // Species container
     this.speciesContainer = this.gui.addFolder('Species');
@@ -90,14 +94,8 @@ export class Controls {
       .add(this.controlState, 'brushRadius', 5, 100, 1)
       .name('Brush Radius');
 
-    // Color picker for drawing
-    const colorObj = { color: this.rgbToHex(this.controlState.drawColor) };
-    interactionFolder
-      .addColor(colorObj, 'color')
-      .name('Draw Color')
-      .onChange((value: string) => {
-        this.controlState.drawColor = this.hexToRgb(value);
-      });
+    // Trail selector for drawing
+    this.updateTrailDrawDropdown(interactionFolder);
 
     // Actions folder
     const actionsFolder = this.gui.addFolder('Actions');
@@ -110,8 +108,71 @@ export class Controls {
 
     // Open important folders
     perfFolder.open();
-    trailFolder.open();
+    this.trailsContainer.open();
     this.speciesContainer.open();
+  }
+
+  private updateTrailDrawDropdown(folder: GUI): void {
+    const trailNames = this.simulation.getTrailNames();
+    const options: Record<string, number> = {};
+    trailNames.forEach((name, index) => {
+      options[name] = index;
+    });
+
+    folder
+      .add(this.controlState, 'selectedTrailIndex', options)
+      .name('Draw on Trail');
+  }
+
+  private rebuildTrailsUI(): void {
+    // Remove old trail folders
+    for (const folder of this.trailFolders) {
+      folder.destroy();
+    }
+    this.trailFolders = [];
+
+    // Create folders for each trail
+    const trailList = this.simulation.getTrails();
+    for (let i = 0; i < trailList.length; i++) {
+      const trail = trailList[i];
+      const folder = this.createTrailFolder(trail, i);
+      this.trailFolders.push(folder);
+    }
+  }
+
+  private createTrailFolder(trail: Trail, index: number): GUI {
+    const folder = this.trailsContainer.addFolder(trail.params.name);
+    const params = trail.params;
+
+    // Name
+    folder.add(params, 'name').name('Name').onChange((value: string) => {
+      folder.title(value);
+    });
+
+    // Color
+    const colorObj = { color: this.rgbToHex(params.color) };
+    folder.addColor(colorObj, 'color').name('Color').onChange((value: string) => {
+      params.color = this.hexToRgb(value);
+    });
+
+    // Diffusion rate
+    folder.add(params, 'diffusionRate', 0, 0.5, 0.01).name('Diffusion Rate');
+
+    // Decay rate
+    folder.add(params, 'decayRate', 0.9, 1, 0.001).name('Decay Rate');
+
+    // Remove button (only if more than 1 trail)
+    if (this.simulation.getTrails().length > 1) {
+      const removeAction = {
+        remove: () => {
+          this.simulation.removeTrail(index);
+        },
+      };
+      folder.add(removeAction, 'remove').name('Remove Trail');
+    }
+
+    folder.open();
+    return folder;
   }
 
   private rebuildSpeciesUI(): void {
@@ -139,16 +200,20 @@ export class Controls {
       folder.title(value);
     });
 
-    // Color
-    const colorObj = { color: this.rgbToHex(params.color) };
-    folder.addColor(colorObj, 'color').name('Color').onChange((value: string) => {
-      params.color = this.hexToRgb(value);
-    });
-
     // Agent count
     folder.add(params, 'agentCount', 100, 20000, 100).name('Agents').onChange((value: number) => {
       this.simulation.updateSpeciesParams(index, { agentCount: value });
     });
+
+    // Trail selection dropdowns
+    const trailNames = this.simulation.getTrailNames();
+    const trailOptions: Record<string, number> = {};
+    trailNames.forEach((name, i) => {
+      trailOptions[name] = i;
+    });
+
+    folder.add(params, 'followTrailIndex', trailOptions).name('Follow Trail');
+    folder.add(params, 'depositTrailIndex', trailOptions).name('Deposit Trail');
 
     // Sensor settings
     folder.add(params, 'sensorAngle', 10, 90, 1).name('Sensor Angle');

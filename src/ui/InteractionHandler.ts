@@ -32,7 +32,9 @@ export class InteractionHandler {
 
   private handleDraw(x: number, y: number): void {
     const state = this.controls.getControlState();
-    const trailMap = this.simulation.getTrailMap();
+    const trail = this.simulation.getTrail(state.selectedTrailIndex);
+    if (!trail) return;
+
     const simDims = this.simulation.getSimDimensions();
 
     const rect = this.canvas.getBoundingClientRect();
@@ -41,10 +43,10 @@ export class InteractionHandler {
 
     switch (state.drawMode) {
       case 'draw':
-        trailMap.drawCircle(x, y, radius, state.drawColor, 50);
+        trail.drawCircle(x, y, radius, 50);
         break;
       case 'erase':
-        trailMap.eraseCircle(x, y, radius);
+        trail.eraseCircle(x, y, radius);
         break;
     }
   }
